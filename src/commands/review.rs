@@ -515,18 +515,18 @@ pub fn merge(
         }
     }
 
-    // Merge the PR first (delete remote branch via --delete-branch)
+    // Merge the PR (without --delete-branch, we handle cleanup ourselves)
     let mut args = vec!["pr", "merge", &pr_num_str];
     if squash {
         args.push("--squash");
     }
-    args.push("--delete-branch");
 
     eprintln!("\x1b[1;36mMerging task {id}\x1b[0m (PR #{pr_number})");
 
     util::run_spin("gh", &args, Some(repo_root), "Merging PR on GitHub…")?;
 
     // Only remove worktree + local branch after merge succeeds
+    // Worktree must be removed before branch deletion, otherwise git refuses
     if worktree_path.exists() {
         eprintln!("Cleaning up worktree and branch…");
         let _ = util::run(
@@ -541,6 +541,8 @@ pub fn merge(
         );
     }
     let _ = util::run("git", &["branch", "-D", &branch], Some(repo_root));
+    // Clean up the remote branch
+    let _ = util::run("git", &["push", "origin", "--delete", &branch], Some(repo_root));
 
     // Update state
     let task = state.find_task_mut(query)?;
