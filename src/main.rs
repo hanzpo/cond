@@ -60,6 +60,9 @@ enum Commands {
         /// Squash merge
         #[arg(long, default_value_t = true)]
         squash: bool,
+        /// Skip uncommitted/unpushed changes check
+        #[arg(long)]
+        force: bool,
     },
 
     /// Print the worktree path for a task, or "root" for repo root
@@ -171,11 +174,11 @@ fn main() -> Result<()> {
             commands::review::pr(&repo_root, &mut state, &query, title.as_deref(), draft)?;
             state.save(&repo_root)?;
         }
-        Commands::Merge { task, squash } => {
+        Commands::Merge { task, squash, force } => {
             let repo_root = util::repo_root()?;
             let mut state = state::CondState::load(&repo_root)?;
             let query = resolve_task_query(&state, &repo_root, task.as_deref())?;
-            commands::review::merge(&repo_root, &mut state, &query, squash)?;
+            commands::review::merge(&repo_root, &mut state, &query, squash, force)?;
             state.save(&repo_root)?;
         }
         Commands::Base => {

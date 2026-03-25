@@ -120,6 +120,42 @@ pub fn detect_task_from_cwd(state: &crate::state::CondState, repo_root: &Path) -
     None
 }
 
+/// Prompt the user for yes/no confirmation. Returns true if they confirm.
+pub fn confirm(message: &str) -> bool {
+    use std::io::Write;
+    eprint!("{message} [y/N] ");
+    std::io::stderr().flush().ok();
+    let mut input = String::new();
+    if std::io::stdin().read_line(&mut input).is_err() {
+        return false;
+    }
+    matches!(input.trim().to_lowercase().as_str(), "y" | "yes")
+}
+
+/// Detect the default branch (e.g. main, master) from the remote.
+pub fn default_branch(repo_root: &Path) -> Result<String> {
+    // Try the symbolic ref first (most reliable when remote is configured)
+    if let Ok(out) = run(
+        "git",
+        &["symbolic-ref", "refs/remotes/origin/HEAD"],
+        Some(repo_root),
+    ) {
+        if let Some(branch) = out.rsplit('/').next() {
+            if !branch.is_empty() {
+                return Ok(branch.to_string());
+            }
+        }
+    }
+    // Fallback: check if "main" or "master" exists locally
+    if run("git", &["rev-parse", "--verify", "main"], Some(repo_root)).is_ok() {
+        return Ok("main".to_string());
+    }
+    if run("git", &["rev-parse", "--verify", "master"], Some(repo_root)).is_ok() {
+        return Ok("master".to_string());
+    }
+    anyhow::bail!("could not detect default branch — set origin HEAD with: git remote set-head origin --auto")
+}
+
 /// Slugify a description for use in branch names.
 pub fn slugify(text: &str) -> String {
     let slug: String = text

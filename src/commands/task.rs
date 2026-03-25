@@ -143,7 +143,8 @@ pub fn prune(state: &mut CondState) -> Result<()> {
 pub fn diff(repo_root: &Path, state: &CondState, query: &str) -> Result<()> {
     let task = state.find_task(query)?;
     let worktree_abs = repo_root.join(&task.worktree_path);
-    util::run_inherit("git", &["diff", "main..HEAD"], Some(&worktree_abs))?;
+    let base = util::default_branch(repo_root)?;
+    util::run_inherit("git", &["diff", &format!("{base}..HEAD")], Some(&worktree_abs))?;
     Ok(())
 }
 

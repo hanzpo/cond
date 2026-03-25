@@ -10,8 +10,9 @@ pub fn review(repo_root: &Path, state: &CondState, query: &str) -> Result<()> {
     let worktree_abs = repo_root.join(&task.worktree_path);
     let description = &task.description;
     let branch = &task.branch;
+    let base = util::default_branch(repo_root)?;
 
-    let diff = util::run("git", &["diff", &format!("main..{branch}")], Some(&worktree_abs))?;
+    let diff = util::run("git", &["diff", &format!("{base}..{branch}")], Some(&worktree_abs))?;
 
     let id = task.id;
     if diff.is_empty() {
@@ -61,7 +62,8 @@ pub fn pr(
     let description = task.description.clone();
 
     // Get diff for claude to analyze
-    let diff = util::run("git", &["diff", "main..HEAD"], Some(&worktree_abs))?;
+    let base = util::default_branch(repo_root)?;
+    let diff = util::run("git", &["diff", &format!("{base}..HEAD")], Some(&worktree_abs))?;
     if diff.is_empty() {
         anyhow::bail!("no changes to create a PR for task {id}");
     }
@@ -110,6 +112,12 @@ Output ONLY a valid JSON object with these fields (no markdown fences, no extra 
                 &["branch", "-m", &branch, &new_branch],
                 Some(&worktree_abs),
             )?;
+            // Delete the old remote branch if it was already pushed
+            let _ = util::run(
+                "git",
+                &["push", "origin", "--delete", &branch],
+                Some(&worktree_abs),
+            );
             // Update state with new branch name
             let task = state.find_task_mut(query)?;
             task.branch = new_branch.clone();
@@ -131,7 +139,7 @@ Output ONLY a valid JSON object with these fields (no markdown fences, no extra 
 
     // Create PR
     let mut args = vec![
-        "pr", "create", "--base", "main", "--head", &final_branch, "--title", &pr_title, "--body",
+        "pr", "create", "--base", &base, "--head", &final_branch, "--title", &pr_title, "--body",
         &pr_body,
     ];
     if draft {
@@ -227,6 +235,7 @@ pub fn merge(
     state: &mut CondState,
     query: &str,
     squash: bool,
+    force: bool,
 ) -> Result<()> {
     let task = state.find_task(query)?;
     let id = task.id;
@@ -238,7 +247,52 @@ pub fn merge(
 
     let pr_num_str = pr_number.to_string();
 
-    // Remove worktree FIRST so branch can be deleted
+    // Check for uncommitted or unpushed changes unless --force
+    if !force && worktree_path.exists() {
+        let mut warnings = Vec::new();
+
+        // Check for uncommitted changes
+        if let Ok(status) = util::run(
+            "git",
+            &["status", "--porcelain"],
+            Some(&worktree_path),
+        ) {
+            if !status.is_empty() {
+                warnings.push("uncommitted changes");
+            }
+        }
+
+        // Check for unpushed commits
+        if let Ok(log) = util::run(
+            "git",
+            &["log", &format!("origin/{branch}..HEAD"), "--oneline"],
+            Some(&worktree_path),
+        ) {
+            if !log.is_empty() {
+                warnings.push("unpushed commits");
+            }
+        }
+
+        if !warnings.is_empty() {
+            let warn_str = warnings.join(" and ");
+            eprintln!("warning: task {id} has {warn_str}");
+            eprintln!("these changes will be lost after merge — this is not recommended.");
+            if !util::confirm("merge anyway?") {
+                anyhow::bail!("aborted");
+            }
+        }
+    }
+
+    // Merge the PR first (delete remote branch via --delete-branch)
+    let mut args = vec!["pr", "merge", &pr_num_str];
+    if squash {
+        args.push("--squash");
+    }
+    args.push("--delete-branch");
+
+    util::run("gh", &args, Some(repo_root))?;
+
+    // Only remove worktree + local branch after merge succeeds
     if worktree_path.exists() {
         let _ = util::run(
             "git",
@@ -251,17 +305,6 @@ pub fn merge(
             Some(repo_root),
         );
     }
-
-    // Merge the PR (with --delete-branch now that worktree is gone)
-    let mut args = vec!["pr", "merge", &pr_num_str];
-    if squash {
-        args.push("--squash");
-    }
-    args.push("--delete-branch");
-
-    util::run("gh", &args, Some(repo_root))?;
-
-    // Clean up local branch if it still exists
     let _ = util::run("git", &["branch", "-D", &branch], Some(repo_root));
 
     // Update state
