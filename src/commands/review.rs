@@ -278,15 +278,19 @@ Output ONLY a valid JSON object with these fields (no markdown fences, no extra 
         }
     };
 
-    let pr_title = title_override
-        .map(|t| t.to_string())
-        .unwrap_or(pr_title);
+    let pr_title = title_override.map(|t| t.to_string()).unwrap_or(pr_title);
 
     let pr_num_str = pr_number.to_string();
     util::run_spin(
         "gh",
         &[
-            "pr", "edit", &pr_num_str, "--title", &pr_title, "--body", &pr_body,
+            "pr",
+            "edit",
+            &pr_num_str,
+            "--title",
+            &pr_title,
+            "--body",
+            &pr_body,
         ],
         Some(&worktree_abs),
         "Updating pull request…",
