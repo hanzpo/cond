@@ -133,7 +133,7 @@ fn main() -> Result<()> {
 
     // Enforce shell setup for all commands except init, shell-setup, and base
     match &cli.command {
-        Commands::Init | Commands::ShellSetup | Commands::Base => {}
+        Commands::Init | Commands::ShellSetup => {}
         _ => ensure_shell_setup()?,
     }
 

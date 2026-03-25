@@ -19,7 +19,8 @@ const SHELL_FUNCTION: &str = r#"cond() {
       dir="$(command cond "$@")" && cd "$dir"
       ;;
     merge)
-      command cond "$@" && cd "$(command cond base)"
+      local dir
+      dir="$(command cond "$@")" && cd "$dir"
       ;;
     *)
       command cond "$@"

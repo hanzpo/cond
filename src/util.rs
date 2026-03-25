@@ -43,11 +43,33 @@ pub fn check_on_path(binary: &str) -> bool {
 }
 
 /// Get the git repo root.
+///
+/// If the current working directory no longer exists (e.g. after a worktree
+/// was removed), walks up the path to find a valid ancestor before asking git.
 pub fn repo_root() -> Result<std::path::PathBuf> {
+    // Determine a valid cwd to run git from. If the real cwd was deleted
+    // (e.g. worktree removed), walk up until we find a directory that exists.
+    let cwd = std::env::current_dir().ok();
+    let run_dir = match &cwd {
+        Some(dir) if dir.exists() => None, // use default cwd
+        _ => {
+            // CWD is gone — walk up from the original path to find an existing ancestor
+            let mut dir = cwd.unwrap_or_else(|| std::path::PathBuf::from("/"));
+            while !dir.exists() {
+                if !dir.pop() {
+                    break;
+                }
+            }
+            Some(dir)
+        }
+    };
+
+    let git_cwd = run_dir.as_deref();
+
     // --show-toplevel gives us the cwd repo/worktree root (needed to resolve relative paths)
-    let toplevel = run("git", &["rev-parse", "--show-toplevel"], None)?;
+    let toplevel = run("git", &["rev-parse", "--show-toplevel"], git_cwd)?;
     // --git-common-dir points to the main repo's .git even from a worktree
-    let git_common = run("git", &["rev-parse", "--git-common-dir"], None)?;
+    let git_common = run("git", &["rev-parse", "--git-common-dir"], git_cwd)?;
     let git_common = std::path::PathBuf::from(&toplevel).join(&git_common);
 
     // .git/worktrees/foo -> .git -> repo root

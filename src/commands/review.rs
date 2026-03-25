@@ -44,6 +44,18 @@ pub fn pr(
 ) -> Result<()> {
     let task = state.find_task(query)?;
     let id = task.id;
+
+    // Don't create duplicate PRs
+    if task.pr_number.is_some() {
+        let url = task.pr_url.as_deref().unwrap_or("unknown");
+        anyhow::bail!("task {id} already has PR {url}");
+    }
+
+    // Don't create PRs for tasks that are already done
+    if task.status == TaskStatus::Merged || task.status == TaskStatus::Cleaned {
+        anyhow::bail!("task {id} is already {}", task.status);
+    }
+
     let worktree_abs = repo_root.join(&task.worktree_path);
     let branch = task.branch.clone();
     let description = task.description.clone();
@@ -257,7 +269,9 @@ pub fn merge(
     task.status = TaskStatus::Merged;
     task.updated_at = Utc::now();
 
-    println!("merged task {id} (PR #{pr_number})");
+    eprintln!("merged task {id} (PR #{pr_number})");
+    // Print repo root to stdout so the shell wrapper can cd there
+    print!("{}", repo_root.display());
 
     Ok(())
 }
