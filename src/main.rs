@@ -6,7 +6,11 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "cond", about = "Git worktree agent orchestrator", infer_subcommands = true)]
+#[command(
+    name = "cond",
+    about = "Git worktree agent orchestrator",
+    infer_subcommands = true
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -110,7 +114,7 @@ enum Commands {
 /// Resolve task query: use provided value or auto-detect from current worktree.
 fn resolve_task_query(
     state: &state::CondState,
-    repo_root: &std::path::PathBuf,
+    repo_root: &std::path::Path,
     task: Option<&str>,
 ) -> Result<String> {
     if let Some(t) = task {
@@ -175,7 +179,11 @@ fn main() -> Result<()> {
             commands::review::pr(&repo_root, &mut state, &query, title.as_deref(), draft)?;
             state.save(&repo_root)?;
         }
-        Commands::Merge { task, squash, force } => {
+        Commands::Merge {
+            task,
+            squash,
+            force,
+        } => {
             let repo_root = util::repo_root()?;
             let mut state = state::CondState::load(&repo_root)?;
             let query = resolve_task_query(&state, &repo_root, task.as_deref())?;

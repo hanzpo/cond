@@ -85,18 +85,29 @@ impl CondState {
             }
         }
         let slug = crate::util::slugify(query);
-        let indices: Vec<_> = self.tasks.iter().enumerate().filter(|(_, t)| {
-            let task_slug = crate::util::slugify(&t.description);
-            task_slug == slug || task_slug.contains(&slug)
-        }).map(|(i, _)| i).collect();
+        let indices: Vec<_> = self
+            .tasks
+            .iter()
+            .enumerate()
+            .filter(|(_, t)| {
+                let task_slug = crate::util::slugify(&t.description);
+                task_slug == slug || task_slug.contains(&slug)
+            })
+            .map(|(i, _)| i)
+            .collect();
         match indices.len() {
             0 => anyhow::bail!("task '{}' not found", query),
             1 => Ok(indices[0]),
             _ => {
-                let names: Vec<_> = indices.iter().map(|&i| {
-                    format!("{} ({})", self.tasks[i].id, self.tasks[i].description)
-                }).collect();
-                anyhow::bail!("ambiguous task name '{}', matches: {}", query, names.join(", "))
+                let names: Vec<_> = indices
+                    .iter()
+                    .map(|&i| format!("{} ({})", self.tasks[i].id, self.tasks[i].description))
+                    .collect();
+                anyhow::bail!(
+                    "ambiguous task name '{}', matches: {}",
+                    query,
+                    names.join(", ")
+                )
             }
         }
     }
@@ -218,9 +229,7 @@ mod tests {
 
     #[test]
     fn find_task_not_found() {
-        let state = make_state(vec![
-            make_task(1, "fix login", TaskStatus::Active),
-        ]);
+        let state = make_state(vec![make_task(1, "fix login", TaskStatus::Active)]);
 
         let result = state.find_task("nonexistent");
         assert!(result.is_err());
@@ -241,9 +250,7 @@ mod tests {
 
     #[test]
     fn find_task_id_not_found_falls_through_to_name() {
-        let state = make_state(vec![
-            make_task(1, "task 99", TaskStatus::Active),
-        ]);
+        let state = make_state(vec![make_task(1, "task 99", TaskStatus::Active)]);
 
         // "99" doesn't match any ID, but it matches the name slug "task-99"
         let task = state.find_task("99").unwrap();
@@ -252,9 +259,7 @@ mod tests {
 
     #[test]
     fn find_task_mut_modifies() {
-        let mut state = make_state(vec![
-            make_task(1, "fix login", TaskStatus::Active),
-        ]);
+        let mut state = make_state(vec![make_task(1, "fix login", TaskStatus::Active)]);
 
         let task = state.find_task_mut("1").unwrap();
         task.status = TaskStatus::PrCreated;
@@ -279,9 +284,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join(".cond")).unwrap();
 
-        let state = make_state(vec![
-            make_task(1, "test task", TaskStatus::Active),
-        ]);
+        let state = make_state(vec![make_task(1, "test task", TaskStatus::Active)]);
 
         state.save(dir.path()).unwrap();
         let loaded = CondState::load(dir.path()).unwrap();

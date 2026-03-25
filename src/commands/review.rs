@@ -152,7 +152,15 @@ Output ONLY a valid JSON object with these fields (no markdown fences, no extra 
 
     // Create PR
     let mut args = vec![
-        "pr", "create", "--base", &base, "--head", &final_branch, "--title", &pr_title, "--body",
+        "pr",
+        "create",
+        "--base",
+        &base,
+        "--head",
+        &final_branch,
+        "--title",
+        &pr_title,
+        "--body",
         &pr_body,
     ];
     if draft {
@@ -364,11 +372,7 @@ pub fn merge(
         let mut warnings = Vec::new();
 
         // Check for uncommitted changes
-        if let Ok(status) = util::run(
-            "git",
-            &["status", "--porcelain"],
-            Some(&worktree_path),
-        ) {
+        if let Ok(status) = util::run("git", &["status", "--porcelain"], Some(&worktree_path)) {
             if !status.is_empty() {
                 warnings.push("uncommitted changes");
             }

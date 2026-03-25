@@ -10,7 +10,9 @@ pub fn run(cmd: &str, args: &[&str], cwd: Option<&Path>) -> Result<String> {
     if let Some(dir) = cwd {
         command.current_dir(dir);
     }
-    let output = command.output().with_context(|| format!("failed to run {cmd}"))?;
+    let output = command
+        .output()
+        .with_context(|| format!("failed to run {cmd}"))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         anyhow::bail!("{} {} failed: {}", cmd, args.join(" "), stderr.trim());
@@ -25,9 +27,16 @@ pub fn run_inherit(cmd: &str, args: &[&str], cwd: Option<&Path>) -> Result<()> {
     if let Some(dir) = cwd {
         command.current_dir(dir);
     }
-    let status = command.status().with_context(|| format!("failed to run {cmd}"))?;
+    let status = command
+        .status()
+        .with_context(|| format!("failed to run {cmd}"))?;
     if !status.success() {
-        anyhow::bail!("{} {} failed with exit code {:?}", cmd, args.join(" "), status.code());
+        anyhow::bail!(
+            "{} {} failed with exit code {:?}",
+            cmd,
+            args.join(" "),
+            status.code()
+        );
     }
     Ok(())
 }
@@ -83,7 +92,12 @@ pub fn repo_root() -> Result<std::path::PathBuf> {
 }
 
 /// Run a command with stdin piped, capture stdout. Errors on non-zero exit.
-pub fn run_with_stdin(cmd: &str, args: &[&str], stdin_data: &str, cwd: Option<&Path>) -> Result<String> {
+pub fn run_with_stdin(
+    cmd: &str,
+    args: &[&str],
+    stdin_data: &str,
+    cwd: Option<&Path>,
+) -> Result<String> {
     use std::io::Write;
     let mut command = Command::new(cmd);
     command.args(args);
@@ -94,7 +108,9 @@ pub fn run_with_stdin(cmd: &str, args: &[&str], stdin_data: &str, cwd: Option<&P
     command.stdout(std::process::Stdio::piped());
     command.stderr(std::process::Stdio::piped());
 
-    let mut child = command.spawn().with_context(|| format!("failed to run {cmd}"))?;
+    let mut child = command
+        .spawn()
+        .with_context(|| format!("failed to run {cmd}"))?;
     if let Some(mut stdin) = child.stdin.take() {
         stdin.write_all(stdin_data.as_bytes())?;
     }
@@ -190,7 +206,9 @@ pub fn default_branch(repo_root: &Path) -> Result<String> {
     if run("git", &["rev-parse", "--verify", "master"], Some(repo_root)).is_ok() {
         return Ok("master".to_string());
     }
-    anyhow::bail!("could not detect default branch — set origin HEAD with: git remote set-head origin --auto")
+    anyhow::bail!(
+        "could not detect default branch — set origin HEAD with: git remote set-head origin --auto"
+    )
 }
 
 /// Slugify a description for use in branch names.

@@ -59,10 +59,7 @@ fn setup_shell_integration() -> Result<()> {
             .create(true)
             .open(&rc_path)?;
         file.write_all(line.as_bytes())?;
-        eprintln!(
-            "added shell integration to {}",
-            rc_path.display()
-        );
+        eprintln!("added shell integration to {}", rc_path.display());
     }
 
     if !shell::is_shell_setup() {

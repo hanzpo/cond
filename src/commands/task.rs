@@ -48,10 +48,7 @@ pub fn status(state: &CondState) -> Result<()> {
         return Ok(());
     }
 
-    println!(
-        "{:<4} {:<11} {:<42} {}",
-        "ID", "STATUS", "BRANCH", "DESCRIPTION"
-    );
+    println!("{:<4} {:<11} {:<42} DESCRIPTION", "ID", "STATUS", "BRANCH");
     for task in &state.tasks {
         println!(
             "{:<4} {:<11} {:<42} {}",
@@ -73,7 +70,12 @@ pub fn kill(repo_root: &Path, state: &mut CondState, query: &str) -> Result<()> 
     if worktree_path.exists() {
         let _ = util::run(
             "git",
-            &["worktree", "remove", &worktree_path.to_string_lossy(), "--force"],
+            &[
+                "worktree",
+                "remove",
+                &worktree_path.to_string_lossy(),
+                "--force",
+            ],
             Some(repo_root),
         );
     }
@@ -144,7 +146,11 @@ pub fn diff(repo_root: &Path, state: &CondState, query: &str) -> Result<()> {
     let task = state.find_task(query)?;
     let worktree_abs = repo_root.join(&task.worktree_path);
     let base = util::default_branch(repo_root)?;
-    util::run_inherit("git", &["diff", &format!("{base}..HEAD")], Some(&worktree_abs))?;
+    util::run_inherit(
+        "git",
+        &["diff", &format!("{base}..HEAD")],
+        Some(&worktree_abs),
+    )?;
     Ok(())
 }
 
@@ -159,8 +165,8 @@ fn truncate(s: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
     use crate::state::{CondState, Task, TaskStatus};
+    use chrono::Utc;
 
     fn make_task(id: u32, description: &str, status: TaskStatus) -> Task {
         let now = Utc::now();
@@ -228,9 +234,7 @@ mod tests {
 
     #[test]
     fn prune_nothing_to_prune() {
-        let mut state = make_state(vec![
-            make_task(1, "active", TaskStatus::Active),
-        ]);
+        let mut state = make_state(vec![make_task(1, "active", TaskStatus::Active)]);
 
         prune(&mut state).unwrap();
         assert_eq!(state.tasks.len(), 1);
@@ -248,9 +252,7 @@ mod tests {
     #[test]
     fn nuke_without_confirm_does_nothing() {
         let dir = tempfile::tempdir().unwrap();
-        let mut state = make_state(vec![
-            make_task(1, "task", TaskStatus::Active),
-        ]);
+        let mut state = make_state(vec![make_task(1, "task", TaskStatus::Active)]);
 
         nuke(dir.path(), &mut state, false).unwrap();
 
