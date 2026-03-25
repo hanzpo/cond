@@ -64,8 +64,8 @@ pub fn status(state: &CondState) -> Result<()> {
     Ok(())
 }
 
-pub fn kill(repo_root: &Path, state: &mut CondState, id: u32) -> Result<()> {
-    let task = state.find_task(id)?;
+pub fn kill(repo_root: &Path, state: &mut CondState, query: &str) -> Result<()> {
+    let task = state.find_task(query)?;
     let branch = task.branch.clone();
     let worktree_path = repo_root.join(&task.worktree_path);
     let is_merged = task.status == TaskStatus::Merged;
@@ -82,7 +82,8 @@ pub fn kill(repo_root: &Path, state: &mut CondState, id: u32) -> Result<()> {
         let _ = util::run("git", &["branch", "-D", &branch], Some(repo_root));
     }
 
-    let task = state.find_task_mut(id)?;
+    let task = state.find_task_mut(query)?;
+    let id = task.id;
     task.status = TaskStatus::Cleaned;
     task.updated_at = Utc::now();
 
@@ -106,7 +107,7 @@ pub fn nuke(repo_root: &Path, state: &mut CondState, confirm: bool) -> Result<()
         .collect();
 
     for id in task_ids {
-        if let Err(e) = kill(repo_root, state, id) {
+        if let Err(e) = kill(repo_root, state, &id.to_string()) {
             eprintln!("warning: failed to kill task {id}: {e}");
         }
     }
@@ -140,8 +141,8 @@ pub fn prune(state: &mut CondState) -> Result<()> {
     Ok(())
 }
 
-pub fn diff(repo_root: &Path, state: &CondState, id: u32) -> Result<()> {
-    let task = state.find_task(id)?;
+pub fn diff(repo_root: &Path, state: &CondState, query: &str) -> Result<()> {
+    let task = state.find_task(query)?;
     let worktree_abs = repo_root.join(&task.worktree_path);
     util::run_inherit("git", &["diff", "main..HEAD"], Some(&worktree_abs))?;
     Ok(())

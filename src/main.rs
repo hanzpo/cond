@@ -6,7 +6,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "cond", about = "Git worktree agent orchestrator")]
+#[command(name = "cond", about = "Git worktree agent orchestrator", infer_subcommands = true)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -26,16 +26,19 @@ enum Commands {
     /// Show status of all tasks
     Status,
 
+    /// Show status of all tasks (alias for status)
+    Ls,
+
     /// Open claude in a task's worktree to review changes
     Review {
-        /// Task ID
-        id: u32,
+        /// Task ID or name
+        task: String,
     },
 
     /// Create a GitHub PR for a task
     Pr {
-        /// Task ID
-        id: u32,
+        /// Task ID or name
+        task: String,
         /// PR title (defaults to task description)
         #[arg(long)]
         title: Option<String>,
@@ -46,8 +49,8 @@ enum Commands {
 
     /// Merge the PR for a task
     Merge {
-        /// Task ID
-        id: u32,
+        /// Task ID or name
+        task: String,
         /// Squash merge
         #[arg(long, default_value_t = true)]
         squash: bool,
@@ -56,10 +59,10 @@ enum Commands {
         delete_branch: bool,
     },
 
-    /// Print the worktree path for a task (use with: cd $(cond cd <id>))
+    /// Print the worktree path for a task, or "root" for repo root
     Cd {
-        /// Task ID
-        id: u32,
+        /// Task ID, name, or "root"
+        task: String,
     },
 
     /// Remove cleaned tasks from state
@@ -67,15 +70,24 @@ enum Commands {
 
     /// Show the diff for a task's branch against main
     Diff {
-        /// Task ID
-        id: u32,
+        /// Task ID or name
+        task: String,
     },
 
     /// Remove a task's worktree and branch
     Kill {
-        /// Task ID
-        id: u32,
+        /// Task ID or name
+        task: String,
     },
+
+    /// Remove a task's worktree and branch (alias for kill)
+    Rm {
+        /// Task ID or name
+        task: String,
+    },
+
+    /// Print the repo base (root) path
+    Base,
 
     /// Print shell integration for eval (add `eval "$(cond shell-setup)"` to your shell rc)
     ShellSetup,
@@ -101,27 +113,31 @@ fn main() -> Result<()> {
             commands::task::spawn(&repo_root, &mut state, &description)?;
             state.save(&repo_root)?;
         }
-        Commands::Status => {
+        Commands::Status | Commands::Ls => {
             let repo_root = util::repo_root()?;
             let state = state::CondState::load(&repo_root)?;
             commands::task::status(&state)?;
         }
-        Commands::Review { id } => {
+        Commands::Review { task } => {
             let repo_root = util::repo_root()?;
             let state = state::CondState::load(&repo_root)?;
-            commands::review::review(&repo_root, &state, id)?;
+            commands::review::review(&repo_root, &state, &task)?;
         }
-        Commands::Pr { id, title, draft } => {
+        Commands::Pr { task, title, draft } => {
             let repo_root = util::repo_root()?;
             let mut state = state::CondState::load(&repo_root)?;
-            commands::review::pr(&repo_root, &mut state, id, title.as_deref(), draft)?;
+            commands::review::pr(&repo_root, &mut state, &task, title.as_deref(), draft)?;
             state.save(&repo_root)?;
         }
-        Commands::Merge { id, squash, delete_branch } => {
+        Commands::Merge { task, squash, delete_branch } => {
             let repo_root = util::repo_root()?;
             let mut state = state::CondState::load(&repo_root)?;
-            commands::review::merge(&repo_root, &mut state, id, squash, delete_branch)?;
+            commands::review::merge(&repo_root, &mut state, &task, squash, delete_branch)?;
             state.save(&repo_root)?;
+        }
+        Commands::Base => {
+            let repo_root = util::repo_root()?;
+            print!("{}", repo_root.display());
         }
         Commands::Prune => {
             let repo_root = util::repo_root()?;
@@ -132,7 +148,7 @@ fn main() -> Result<()> {
         Commands::ShellSetup => {
             commands::shell::shell_setup()?;
         }
-        Commands::Cd { id } => {
+        Commands::Cd { task } => {
             if !commands::shell::is_shell_setup() {
                 eprintln!("warning: shell integration not set up — `cond cd` will only print the path.");
                 eprintln!("add this to your shell rc file:");
@@ -142,18 +158,18 @@ fn main() -> Result<()> {
             }
             let repo_root = util::repo_root()?;
             let state = state::CondState::load(&repo_root)?;
-            let task = state.find_task(id)?;
-            print!("{}", repo_root.join(&task.worktree_path).display());
+            let found = state.find_task(&task)?;
+            print!("{}", repo_root.join(&found.worktree_path).display());
         }
-        Commands::Diff { id } => {
+        Commands::Diff { task } => {
             let repo_root = util::repo_root()?;
             let state = state::CondState::load(&repo_root)?;
-            commands::task::diff(&repo_root, &state, id)?;
+            commands::task::diff(&repo_root, &state, &task)?;
         }
-        Commands::Kill { id } => {
+        Commands::Kill { task } | Commands::Rm { task } => {
             let repo_root = util::repo_root()?;
             let mut state = state::CondState::load(&repo_root)?;
-            commands::task::kill(&repo_root, &mut state, id)?;
+            commands::task::kill(&repo_root, &mut state, &task)?;
             state.save(&repo_root)?;
         }
         Commands::Nuke { confirm } => {

@@ -65,17 +65,39 @@ impl CondState {
         std::fs::write(&path, contents).context("failed to write state.json")
     }
 
-    pub fn find_task(&self, id: u32) -> Result<&Task> {
-        self.tasks
-            .iter()
-            .find(|t| t.id == id)
-            .ok_or_else(|| anyhow::anyhow!("task {} not found", id))
+    /// Find a task by ID (numeric) or by name (matched against slugified description).
+    pub fn find_task(&self, query: &str) -> Result<&Task> {
+        let idx = self.resolve_task_index(query)?;
+        Ok(&self.tasks[idx])
     }
 
-    pub fn find_task_mut(&mut self, id: u32) -> Result<&mut Task> {
-        self.tasks
-            .iter_mut()
-            .find(|t| t.id == id)
-            .ok_or_else(|| anyhow::anyhow!("task {} not found", id))
+    /// Find a task mutably by ID (numeric) or by name.
+    pub fn find_task_mut(&mut self, query: &str) -> Result<&mut Task> {
+        let idx = self.resolve_task_index(query)?;
+        Ok(&mut self.tasks[idx])
+    }
+
+    /// Resolve a query to a single task index.
+    fn resolve_task_index(&self, query: &str) -> Result<usize> {
+        if let Ok(id) = query.parse::<u32>() {
+            if let Some(idx) = self.tasks.iter().position(|t| t.id == id) {
+                return Ok(idx);
+            }
+        }
+        let slug = crate::util::slugify(query);
+        let indices: Vec<_> = self.tasks.iter().enumerate().filter(|(_, t)| {
+            let task_slug = crate::util::slugify(&t.description);
+            task_slug == slug || task_slug.contains(&slug)
+        }).map(|(i, _)| i).collect();
+        match indices.len() {
+            0 => anyhow::bail!("task '{}' not found", query),
+            1 => Ok(indices[0]),
+            _ => {
+                let names: Vec<_> = indices.iter().map(|&i| {
+                    format!("{} ({})", self.tasks[i].id, self.tasks[i].description)
+                }).collect();
+                anyhow::bail!("ambiguous task name '{}', matches: {}", query, names.join(", "))
+            }
+        }
     }
 }

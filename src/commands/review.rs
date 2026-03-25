@@ -5,14 +5,15 @@ use std::path::Path;
 use crate::state::{CondState, TaskStatus};
 use crate::util;
 
-pub fn review(repo_root: &Path, state: &CondState, id: u32) -> Result<()> {
-    let task = state.find_task(id)?;
+pub fn review(repo_root: &Path, state: &CondState, query: &str) -> Result<()> {
+    let task = state.find_task(query)?;
     let worktree_abs = repo_root.join(&task.worktree_path);
     let description = &task.description;
     let branch = &task.branch;
 
     let diff = util::run("git", &["diff", &format!("main..{branch}")], Some(&worktree_abs))?;
 
+    let id = task.id;
     if diff.is_empty() {
         println!("no changes to review for task {id}");
         return Ok(());
@@ -36,11 +37,11 @@ Review for correctness, bugs, style, and security. If changes are needed, make t
 pub fn pr(
     repo_root: &Path,
     state: &mut CondState,
-    id: u32,
+    query: &str,
     title: Option<&str>,
     draft: bool,
 ) -> Result<()> {
-    let task = state.find_task(id)?;
+    let task = state.find_task(query)?;
     let worktree_abs = repo_root.join(&task.worktree_path);
     let branch = &task.branch;
     let description = &task.description;
@@ -50,6 +51,7 @@ pub fn pr(
     util::run("git", &["push", "-u", "origin", branch], Some(&worktree_abs))?;
 
     // Create PR
+    let id = task.id;
     let body = format!("Task #{id}: {description}\n\nCreated by cond.");
     let mut args = vec![
         "pr", "create", "--base", "main", "--head", branch,
@@ -63,7 +65,7 @@ pub fn pr(
     let pr_url = output.trim().to_string();
     let pr_number = pr_url.rsplit('/').next().and_then(|s| s.parse::<u32>().ok());
 
-    let task = state.find_task_mut(id)?;
+    let task = state.find_task_mut(query)?;
     task.pr_url = Some(pr_url.clone());
     task.pr_number = pr_number;
     task.status = TaskStatus::PrCreated;
@@ -81,11 +83,12 @@ pub fn pr(
 pub fn merge(
     repo_root: &Path,
     state: &mut CondState,
-    id: u32,
+    query: &str,
     squash: bool,
     delete_branch: bool,
 ) -> Result<()> {
-    let task = state.find_task(id)?;
+    let task = state.find_task(query)?;
+    let id = task.id;
     let pr_number = task
         .pr_number
         .ok_or_else(|| anyhow::anyhow!("task {id} has no PR — run `cond pr {id}` first"))?;
@@ -101,7 +104,7 @@ pub fn merge(
 
     util::run("gh", &args, Some(repo_root))?;
 
-    let task = state.find_task_mut(id)?;
+    let task = state.find_task_mut(query)?;
     task.status = TaskStatus::Merged;
     task.updated_at = Utc::now();
 
