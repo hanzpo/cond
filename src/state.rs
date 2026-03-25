@@ -101,3 +101,199 @@ impl CondState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+
+    fn make_task(id: u32, description: &str, status: TaskStatus) -> Task {
+        let now = Utc::now();
+        Task {
+            id,
+            description: description.to_string(),
+            branch: format!("cond/task-{id}-{}", crate::util::slugify(description)),
+            worktree_path: format!(".cond-worktrees/task-{id}"),
+            status,
+            created_at: now,
+            updated_at: now,
+            pr_number: None,
+            pr_url: None,
+        }
+    }
+
+    fn make_state(tasks: Vec<Task>) -> CondState {
+        CondState {
+            version: 1,
+            next_id: tasks.len() as u32 + 1,
+            repo_root: "/tmp/repo".to_string(),
+            tasks,
+        }
+    }
+
+    // --- TaskStatus Display ---
+
+    #[test]
+    fn task_status_display() {
+        assert_eq!(TaskStatus::Active.to_string(), "active");
+        assert_eq!(TaskStatus::PrCreated.to_string(), "pr_created");
+        assert_eq!(TaskStatus::Merged.to_string(), "merged");
+        assert_eq!(TaskStatus::Cleaned.to_string(), "cleaned");
+    }
+
+    // --- Serialization round-trip ---
+
+    #[test]
+    fn task_status_serde_round_trip() {
+        let statuses = vec![
+            TaskStatus::Active,
+            TaskStatus::PrCreated,
+            TaskStatus::Merged,
+            TaskStatus::Cleaned,
+        ];
+        for status in statuses {
+            let json = serde_json::to_string(&status).unwrap();
+            let deserialized: TaskStatus = serde_json::from_str(&json).unwrap();
+            assert_eq!(status, deserialized);
+        }
+    }
+
+    #[test]
+    fn task_status_serde_snake_case() {
+        let json = serde_json::to_string(&TaskStatus::PrCreated).unwrap();
+        assert_eq!(json, "\"pr_created\"");
+    }
+
+    #[test]
+    fn state_serde_round_trip() {
+        let state = make_state(vec![
+            make_task(1, "fix login bug", TaskStatus::Active),
+            make_task(2, "add search", TaskStatus::PrCreated),
+        ]);
+
+        let json = serde_json::to_string_pretty(&state).unwrap();
+        let restored: CondState = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(restored.version, 1);
+        assert_eq!(restored.tasks.len(), 2);
+        assert_eq!(restored.tasks[0].id, 1);
+        assert_eq!(restored.tasks[1].description, "add search");
+    }
+
+    // --- find_task ---
+
+    #[test]
+    fn find_task_by_id() {
+        let state = make_state(vec![
+            make_task(1, "fix login", TaskStatus::Active),
+            make_task(2, "add search", TaskStatus::Active),
+        ]);
+
+        let task = state.find_task("2").unwrap();
+        assert_eq!(task.id, 2);
+        assert_eq!(task.description, "add search");
+    }
+
+    #[test]
+    fn find_task_by_name_exact() {
+        let state = make_state(vec![
+            make_task(1, "fix login bug", TaskStatus::Active),
+            make_task(2, "add search feature", TaskStatus::Active),
+        ]);
+
+        let task = state.find_task("add search feature").unwrap();
+        assert_eq!(task.id, 2);
+    }
+
+    #[test]
+    fn find_task_by_name_substring() {
+        let state = make_state(vec![
+            make_task(1, "fix login bug", TaskStatus::Active),
+            make_task(2, "add search feature", TaskStatus::Active),
+        ]);
+
+        let task = state.find_task("search").unwrap();
+        assert_eq!(task.id, 2);
+    }
+
+    #[test]
+    fn find_task_not_found() {
+        let state = make_state(vec![
+            make_task(1, "fix login", TaskStatus::Active),
+        ]);
+
+        let result = state.find_task("nonexistent");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not found"));
+    }
+
+    #[test]
+    fn find_task_ambiguous() {
+        let state = make_state(vec![
+            make_task(1, "fix login bug", TaskStatus::Active),
+            make_task(2, "fix login error", TaskStatus::Active),
+        ]);
+
+        let result = state.find_task("fix login");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("ambiguous"));
+    }
+
+    #[test]
+    fn find_task_id_not_found_falls_through_to_name() {
+        let state = make_state(vec![
+            make_task(1, "task 99", TaskStatus::Active),
+        ]);
+
+        // "99" doesn't match any ID, but it matches the name slug "task-99"
+        let task = state.find_task("99").unwrap();
+        assert_eq!(task.id, 1);
+    }
+
+    #[test]
+    fn find_task_mut_modifies() {
+        let mut state = make_state(vec![
+            make_task(1, "fix login", TaskStatus::Active),
+        ]);
+
+        let task = state.find_task_mut("1").unwrap();
+        task.status = TaskStatus::PrCreated;
+        task.pr_number = Some(42);
+
+        assert_eq!(state.tasks[0].status, TaskStatus::PrCreated);
+        assert_eq!(state.tasks[0].pr_number, Some(42));
+    }
+
+    // --- load / save ---
+
+    #[test]
+    fn load_missing_state_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = CondState::load(dir.path());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not initialized"));
+    }
+
+    #[test]
+    fn save_and_load_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".cond")).unwrap();
+
+        let state = make_state(vec![
+            make_task(1, "test task", TaskStatus::Active),
+        ]);
+
+        state.save(dir.path()).unwrap();
+        let loaded = CondState::load(dir.path()).unwrap();
+
+        assert_eq!(loaded.version, state.version);
+        assert_eq!(loaded.tasks.len(), 1);
+        assert_eq!(loaded.tasks[0].description, "test task");
+    }
+
+    #[test]
+    fn state_path_is_correct() {
+        let path = CondState::state_path(Path::new("/foo/bar"));
+        assert_eq!(path, PathBuf::from("/foo/bar/.cond/state.json"));
+    }
+}

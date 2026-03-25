@@ -230,6 +230,105 @@ fn extract_json(text: &str) -> Option<&str> {
     None
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- extract_json ---
+
+    #[test]
+    fn extract_json_from_fenced_block() {
+        let input = r#"Here is the output:
+```json
+{"title": "Fix bug", "description": "Fixes the login bug"}
+```
+Done."#;
+        let result = extract_json(input).unwrap();
+        assert!(result.contains("Fix bug"));
+    }
+
+    #[test]
+    fn extract_json_from_plain_fence() {
+        let input = "```\n{\"title\": \"hello\"}\n```";
+        let result = extract_json(input).unwrap();
+        assert!(result.contains("hello"));
+    }
+
+    #[test]
+    fn extract_json_raw_object() {
+        let input = r#"{"title": "raw json"}"#;
+        let result = extract_json(input).unwrap();
+        assert!(result.contains("raw json"));
+    }
+
+    #[test]
+    fn extract_json_embedded_in_text() {
+        let input = r#"Here is the answer: {"title": "embedded"} and more text"#;
+        let result = extract_json(input).unwrap();
+        assert!(result.starts_with('{'));
+        assert!(result.ends_with('}'));
+        assert!(result.contains("embedded"));
+    }
+
+    #[test]
+    fn extract_json_no_json() {
+        assert!(extract_json("just plain text").is_none());
+    }
+
+    #[test]
+    fn extract_json_empty() {
+        assert!(extract_json("").is_none());
+    }
+
+    // --- parse_claude_pr_output ---
+
+    #[test]
+    fn parse_valid_json_output() {
+        let output = r#"{"title": "Fix login bug", "description": "Fixes the auth flow", "branch": "fix-login"}"#;
+        let (title, body, branch) = parse_claude_pr_output(output, "fallback", 1);
+        assert_eq!(title, "Fix login bug");
+        assert_eq!(body, "Fixes the auth flow");
+        assert_eq!(branch.unwrap(), "fix-login");
+    }
+
+    #[test]
+    fn parse_json_missing_fields_uses_fallback() {
+        let output = r#"{}"#;
+        let (title, body, branch) = parse_claude_pr_output(output, "my fallback", 5);
+        assert_eq!(title, "my fallback");
+        assert!(body.contains("Task #5"));
+        assert!(branch.is_none());
+    }
+
+    #[test]
+    fn parse_invalid_json_uses_fallback() {
+        let output = "this is not json at all";
+        let (title, body, branch) = parse_claude_pr_output(output, "fallback desc", 3);
+        assert_eq!(title, "fallback desc");
+        assert!(body.contains("Task #3"));
+        assert!(branch.is_none());
+    }
+
+    #[test]
+    fn parse_json_in_fenced_block() {
+        let output = r#"Sure! Here's the PR content:
+```json
+{"title": "Add search", "description": "Adds search functionality", "branch": "add-search"}
+```"#;
+        let (title, body, branch) = parse_claude_pr_output(output, "fallback", 1);
+        assert_eq!(title, "Add search");
+        assert_eq!(body, "Adds search functionality");
+        assert!(branch.is_some());
+    }
+
+    #[test]
+    fn parse_branch_gets_slugified() {
+        let output = r#"{"title": "t", "description": "d", "branch": "My Branch Name!!"}"#;
+        let (_, _, branch) = parse_claude_pr_output(output, "f", 1);
+        assert_eq!(branch.unwrap(), "my-branch-name");
+    }
+}
+
 pub fn merge(
     repo_root: &Path,
     state: &mut CondState,

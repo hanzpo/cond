@@ -155,3 +155,107 @@ fn truncate(s: &str, max: usize) -> String {
         format!("{}...", &s[..max - 3])
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::Utc;
+    use crate::state::{CondState, Task, TaskStatus};
+
+    fn make_task(id: u32, description: &str, status: TaskStatus) -> Task {
+        let now = Utc::now();
+        Task {
+            id,
+            description: description.to_string(),
+            branch: format!("cond/task-{id}-{}", crate::util::slugify(description)),
+            worktree_path: format!(".cond-worktrees/task-{id}"),
+            status,
+            created_at: now,
+            updated_at: now,
+            pr_number: None,
+            pr_url: None,
+        }
+    }
+
+    fn make_state(tasks: Vec<Task>) -> CondState {
+        CondState {
+            version: 1,
+            next_id: tasks.iter().map(|t| t.id).max().unwrap_or(0) + 1,
+            repo_root: "/tmp/repo".to_string(),
+            tasks,
+        }
+    }
+
+    // --- truncate ---
+
+    #[test]
+    fn truncate_short_string() {
+        assert_eq!(truncate("hello", 10), "hello");
+    }
+
+    #[test]
+    fn truncate_exact_length() {
+        assert_eq!(truncate("hello", 5), "hello");
+    }
+
+    #[test]
+    fn truncate_long_string() {
+        assert_eq!(truncate("hello world", 8), "hello...");
+    }
+
+    #[test]
+    fn truncate_just_over() {
+        assert_eq!(truncate("abcdef", 5), "ab...");
+    }
+
+    // --- prune ---
+
+    #[test]
+    fn prune_removes_cleaned_tasks() {
+        let mut state = make_state(vec![
+            make_task(1, "active task", TaskStatus::Active),
+            make_task(2, "cleaned task", TaskStatus::Cleaned),
+            make_task(3, "merged task", TaskStatus::Merged),
+            make_task(4, "another cleaned", TaskStatus::Cleaned),
+        ]);
+
+        prune(&mut state).unwrap();
+
+        assert_eq!(state.tasks.len(), 2);
+        assert_eq!(state.tasks[0].id, 1);
+        assert_eq!(state.tasks[1].id, 3);
+    }
+
+    #[test]
+    fn prune_nothing_to_prune() {
+        let mut state = make_state(vec![
+            make_task(1, "active", TaskStatus::Active),
+        ]);
+
+        prune(&mut state).unwrap();
+        assert_eq!(state.tasks.len(), 1);
+    }
+
+    #[test]
+    fn prune_empty_state() {
+        let mut state = make_state(vec![]);
+        prune(&mut state).unwrap();
+        assert!(state.tasks.is_empty());
+    }
+
+    // --- nuke without confirm ---
+
+    #[test]
+    fn nuke_without_confirm_does_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = make_state(vec![
+            make_task(1, "task", TaskStatus::Active),
+        ]);
+
+        nuke(dir.path(), &mut state, false).unwrap();
+
+        // Task should still be there since we didn't confirm
+        assert_eq!(state.tasks.len(), 1);
+        assert_eq!(state.tasks[0].status, TaskStatus::Active);
+    }
+}

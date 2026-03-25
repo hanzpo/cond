@@ -183,3 +183,119 @@ pub fn slugify(text: &str) -> String {
         result
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- slugify ---
+
+    #[test]
+    fn slugify_simple() {
+        assert_eq!(slugify("Hello World"), "hello-world");
+    }
+
+    #[test]
+    fn slugify_special_chars() {
+        assert_eq!(slugify("Fix bug #123!"), "fix-bug-123");
+    }
+
+    #[test]
+    fn slugify_consecutive_separators() {
+        assert_eq!(slugify("foo---bar   baz"), "foo-bar-baz");
+    }
+
+    #[test]
+    fn slugify_leading_trailing_separators() {
+        assert_eq!(slugify("  -hello- "), "hello");
+    }
+
+    #[test]
+    fn slugify_empty() {
+        assert_eq!(slugify(""), "");
+    }
+
+    #[test]
+    fn slugify_truncates_long_strings() {
+        let long = "a".repeat(60);
+        let result = slugify(&long);
+        assert!(result.len() <= 40);
+        assert_eq!(result, "a".repeat(40));
+    }
+
+    #[test]
+    fn slugify_truncation_strips_trailing_hyphens() {
+        // 39 a's + space + more = slug will be "aaa...a-bbb" and truncated at 40
+        let input = format!("{} {}", "a".repeat(39), "bbbbb");
+        let result = slugify(&input);
+        assert!(result.len() <= 40);
+        assert!(!result.ends_with('-'));
+    }
+
+    #[test]
+    fn slugify_unicode() {
+        // Rust's is_alphanumeric() treats accented chars as alphanumeric
+        assert_eq!(slugify("café résumé"), "café-résumé");
+    }
+
+    #[test]
+    fn slugify_only_special_chars() {
+        assert_eq!(slugify("!!!@@@###"), "");
+    }
+
+    #[test]
+    fn slugify_mixed_case() {
+        assert_eq!(slugify("MyTaskName"), "mytaskname");
+    }
+
+    #[test]
+    fn slugify_numbers_only() {
+        assert_eq!(slugify("123"), "123");
+    }
+
+    // --- check_on_path ---
+
+    #[test]
+    fn check_on_path_finds_git() {
+        assert!(check_on_path("git"));
+    }
+
+    #[test]
+    fn check_on_path_nonexistent() {
+        assert!(!check_on_path("definitely-not-a-real-binary-xyzzy"));
+    }
+
+    // --- run ---
+
+    #[test]
+    fn run_captures_stdout() {
+        let out = run("echo", &["hello"], None).unwrap();
+        assert_eq!(out, "hello");
+    }
+
+    #[test]
+    fn run_fails_on_bad_command() {
+        let result = run("false", &[], None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn run_with_cwd() {
+        let out = run("pwd", &[], Some(Path::new("/tmp"))).unwrap();
+        assert!(out.contains("tmp") || out.contains("private/tmp"));
+    }
+
+    // --- run_with_stdin ---
+
+    #[test]
+    fn run_with_stdin_pipes_data() {
+        let out = run_with_stdin("cat", &[], "hello from stdin", None).unwrap();
+        assert_eq!(out, "hello from stdin");
+    }
+
+    #[test]
+    fn run_with_stdin_fails_on_bad_exit() {
+        let result = run_with_stdin("false", &[], "", None);
+        assert!(result.is_err());
+    }
+}

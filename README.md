@@ -33,21 +33,21 @@ eval "$(cond shell-setup)"   # enable shell integration (add to .zshrc/.bashrc)
 |---------|-------------|
 | `cond init` | Initialize cond in the current repo |
 | `cond spawn <description>` | Create a new task with its own worktree and branch |
+| `cond new <description>` | Alias for `spawn` |
 | `cond status` / `cond ls` | Show all tasks and their statuses |
-| `cond cd <task>` | Print the worktree path for a task |
+| `cond cd [task]` | Change directory to a task's worktree, or repo root if omitted |
 | `cond base` | Print the repo base path |
-| `cond diff <task>` | Show the diff between a task's branch and main |
-| `cond review <task>` | Open Claude Code in the task's worktree for AI-assisted review |
-| `cond pr <task>` | Push the branch and create a GitHub PR |
-| `cond merge <task>` | Merge the task's PR |
+| `cond diff [task]` | Show the diff between a task's branch and main |
+| `cond review [task]` | Open Claude Code in the task's worktree for AI-assisted review |
+| `cond pr [task]` | Push the branch and create a GitHub PR |
+| `cond merge [task]` | Merge the task's PR |
 | `cond kill <task>` / `cond rm <task>` | Remove a task's worktree and branch |
 | `cond prune` | Remove cleaned tasks from state |
 | `cond nuke --confirm` | Tear down all tasks and cond infrastructure |
-| `cond shell-setup` | Print shell integration code |
 
 Commands can be abbreviated to any unambiguous prefix (e.g. `cond sp`, `cond re`, `cond st`).
 
-All commands that take `<task>` accept either a **task ID** (e.g. `1`) or a **task name** (a substring of the description, e.g. `auth`). If the name is ambiguous, you'll be prompted to be more specific.
+Commands shown with `[task]` will auto-detect the current task when run inside a worktree. All commands that take `<task>` or `[task]` accept either a **task ID** (e.g. `1`) or a **task name** (a substring of the description, e.g. `auth`). If the name is ambiguous, you'll be prompted to be more specific.
 
 ### PR options
 
@@ -58,7 +58,8 @@ cond pr <task> --title "Custom title" --draft
 ### Merge options
 
 ```bash
-cond merge <task> --squash=true --delete-branch=true
+cond merge <task> --squash    # squash merge (default)
+cond merge <task> --force     # skip uncommitted/unpushed changes check
 ```
 
 ## Workflow

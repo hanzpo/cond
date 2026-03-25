@@ -65,9 +65,9 @@ enum Commands {
         force: bool,
     },
 
-    /// Print the worktree path for a task, or "root" for repo root
+    /// Change directory to a task's worktree (or repo root if no task given)
     Cd {
-        /// Task ID, name, or "root"
+        /// Task ID or name (omit to get repo root)
         task: Option<String>,
     },
 
@@ -96,6 +96,7 @@ enum Commands {
     Base,
 
     /// Print shell integration for eval (add `eval "$(cond shell-setup)"` to your shell rc)
+    #[command(hide = true)]
     ShellSetup,
 
     /// Kill all tasks and tear down everything
