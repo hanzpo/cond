@@ -44,8 +44,19 @@ pub fn check_on_path(binary: &str) -> bool {
 
 /// Get the git repo root.
 pub fn repo_root() -> Result<std::path::PathBuf> {
-    let root = run("git", &["rev-parse", "--show-toplevel"], None)?;
-    Ok(std::path::PathBuf::from(root))
+    // --show-toplevel gives us the cwd repo/worktree root (needed to resolve relative paths)
+    let toplevel = run("git", &["rev-parse", "--show-toplevel"], None)?;
+    // --git-common-dir points to the main repo's .git even from a worktree
+    let git_common = run("git", &["rev-parse", "--git-common-dir"], None)?;
+    let git_common = std::path::PathBuf::from(&toplevel).join(&git_common);
+
+    // .git/worktrees/foo -> .git -> repo root
+    // .git (bare) -> repo root
+    let root = git_common
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("could not determine repo root"))?;
+
+    Ok(std::fs::canonicalize(root)?)
 }
 
 /// Slugify a description for use in branch names.

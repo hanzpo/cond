@@ -77,6 +77,9 @@ enum Commands {
         id: u32,
     },
 
+    /// Print shell integration for eval (add `eval "$(cond shell-setup)"` to your shell rc)
+    ShellSetup,
+
     /// Kill all tasks and tear down everything
     Nuke {
         /// Skip confirmation prompt
@@ -126,7 +129,17 @@ fn main() -> Result<()> {
             commands::task::prune(&mut state)?;
             state.save(&repo_root)?;
         }
+        Commands::ShellSetup => {
+            commands::shell::shell_setup()?;
+        }
         Commands::Cd { id } => {
+            if !commands::shell::is_shell_setup() {
+                eprintln!("warning: shell integration not set up — `cond cd` will only print the path.");
+                eprintln!("add this to your shell rc file:");
+                eprintln!();
+                eprintln!("  eval \"$(cond shell-setup)\"");
+                eprintln!();
+            }
             let repo_root = util::repo_root()?;
             let state = state::CondState::load(&repo_root)?;
             let task = state.find_task(id)?;
