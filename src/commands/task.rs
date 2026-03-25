@@ -34,9 +34,10 @@ pub fn spawn(repo_root: &Path, state: &mut CondState, description: &str) -> Resu
         pr_url: None,
     });
 
-    println!("spawned task {id}: \"{description}\"");
-    println!("  branch:   {branch}");
-    println!("  worktree: {worktree_rel}");
+    eprintln!("spawned task {id}: \"{description}\"");
+    eprintln!("  branch:   {branch}");
+    eprintln!("  worktree: {worktree_rel}");
+    print!("{}", worktree_abs.display());
 
     Ok(())
 }
