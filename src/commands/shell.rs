@@ -2,30 +2,15 @@ use anyhow::{bail, Result};
 use std::path::PathBuf;
 
 const SHELL_FUNCTION: &str = r#"cond() {
-  case "$1" in
-    cd)
-      if [ -n "$2" ]; then
-        local dir
-        dir="$(command cond cd "$2")" && cd "$dir"
-      else
-        cd "$(command cond base)"
-      fi
-      ;;
-    base)
-      cd "$(command cond base)"
-      ;;
-    spawn)
-      local dir
-      dir="$(command cond "$@")" && cd "$dir"
-      ;;
-    merge)
-      local dir
-      dir="$(command cond "$@")" && cd "$dir"
-      ;;
-    *)
-      command cond "$@"
-      ;;
-  esac
+  local out rc
+  out="$(command cond "$@")"
+  rc=$?
+  if [ $rc -eq 0 ] && [ -n "$out" ] && [ -d "$out" ]; then
+    cd "$out"
+  elif [ -n "$out" ]; then
+    printf '%s\n' "$out"
+  fi
+  return $rc
 }
 export COND_SHELL=1
 "#;

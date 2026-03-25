@@ -1,6 +1,40 @@
 {
   "version": 1,
-  "next_id": 2,
+  "next_id": 4,
   "repo_root": "/Users/hanzp/projects/cond",
-  "tasks": []
+  "tasks": [
+    {
+      "id": 1,
+      "description": "test",
+      "branch": "cond/task-1-test",
+      "worktree_path": ".cond-worktrees/task-1",
+      "status": "active",
+      "created_at": "2026-03-25T18:27:19.260777Z",
+      "updated_at": "2026-03-25T18:27:19.260777Z",
+      "pr_number": null,
+      "pr_url": null
+    },
+    {
+      "id": 2,
+      "description": "test",
+      "branch": "cond/task-2-test",
+      "worktree_path": ".cond-worktrees/task-2",
+      "status": "active",
+      "created_at": "2026-03-25T18:27:28.356914Z",
+      "updated_at": "2026-03-25T18:27:28.356914Z",
+      "pr_number": null,
+      "pr_url": null
+    },
+    {
+      "id": 3,
+      "description": "test",
+      "branch": "cond/task-3-test",
+      "worktree_path": ".cond-worktrees/task-3",
+      "status": "active",
+      "created_at": "2026-03-25T18:29:49.006431Z",
+      "updated_at": "2026-03-25T18:29:49.006431Z",
+      "pr_number": null,
+      "pr_url": null
+    }
+  ]
 }

@@ -174,7 +174,7 @@ fn main() -> Result<()> {
         }
         Commands::Base => {
             let repo_root = util::repo_root()?;
-            print!("{}", repo_root.display());
+            println!("{}", repo_root.display());
         }
         Commands::Prune => {
             let repo_root = util::repo_root()?;
@@ -190,10 +190,10 @@ fn main() -> Result<()> {
             if let Some(task) = task {
                 let state = state::CondState::load(&repo_root)?;
                 let found = state.find_task(&task)?;
-                print!("{}", repo_root.join(&found.worktree_path).display());
+                println!("{}", repo_root.join(&found.worktree_path).display());
             } else {
                 // No task specified = go to repo root
-                print!("{}", repo_root.display());
+                println!("{}", repo_root.display());
             }
         }
         Commands::Diff { task } => {

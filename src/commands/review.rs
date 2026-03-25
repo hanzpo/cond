@@ -271,7 +271,7 @@ pub fn merge(
 
     eprintln!("merged task {id} (PR #{pr_number})");
     // Print repo root to stdout so the shell wrapper can cd there
-    print!("{}", repo_root.display());
+    println!("{}", repo_root.display());
 
     Ok(())
 }
