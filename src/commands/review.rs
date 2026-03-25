@@ -542,7 +542,11 @@ pub fn merge(
     }
     let _ = util::run("git", &["branch", "-D", &branch], Some(repo_root));
     // Clean up the remote branch
-    let _ = util::run("git", &["push", "origin", "--delete", &branch], Some(repo_root));
+    let _ = util::run(
+        "git",
+        &["push", "origin", "--delete", &branch],
+        Some(repo_root),
+    );
 
     // Update state
     let task = state.find_task_mut(query)?;
