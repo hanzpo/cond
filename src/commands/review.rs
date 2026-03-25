@@ -523,7 +523,19 @@ pub fn merge(
 
     eprintln!("\x1b[1;36mMerging task {id}\x1b[0m (PR #{pr_number})");
 
-    util::run_spin("gh", &args, Some(repo_root), "Merging PR on GitHub…")?;
+    if let Err(e) = util::run_spin("gh", &args, Some(repo_root), "Merging PR on GitHub…") {
+        // If the PR is already merged, continue with cleanup
+        let state_json = util::run(
+            "gh",
+            &["pr", "view", &pr_num_str, "--json", "state", "-q", ".state"],
+            Some(repo_root),
+        )
+        .unwrap_or_default();
+        if state_json != "MERGED" {
+            return Err(e);
+        }
+        eprintln!("PR already merged, continuing with cleanup…");
+    }
 
     // Only remove worktree + local branch after merge succeeds
     // Worktree must be removed before branch deletion, otherwise git refuses
