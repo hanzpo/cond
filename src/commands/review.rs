@@ -12,7 +12,12 @@ pub fn review(repo_root: &Path, state: &CondState, query: &str) -> Result<()> {
     let branch = &task.branch;
     let base = util::default_branch(repo_root)?;
 
-    let diff = util::run("git", &["diff", &format!("{base}..{branch}")], Some(&worktree_abs))?;
+    let diff = util::run_spin(
+        "git",
+        &["diff", &format!("{base}..{branch}")],
+        Some(&worktree_abs),
+        "Getting diff…",
+    )?;
 
     let id = task.id;
     if diff.is_empty() {
@@ -30,6 +35,7 @@ pub fn review(repo_root: &Path, state: &CondState, query: &str) -> Result<()> {
 Review for correctness, bugs, style, and security. If changes are needed, make them directly. If the code is good, say so."#
     );
 
+    eprintln!("Starting review with Claude…");
     // Pass prompt as positional argument for interactive mode
     util::run_inherit("claude", &[&prompt], Some(&worktree_abs))?;
 
@@ -63,7 +69,12 @@ pub fn pr(
 
     // Get diff for claude to analyze
     let base = util::default_branch(repo_root)?;
-    let diff = util::run("git", &["diff", &format!("{base}..HEAD")], Some(&worktree_abs))?;
+    let diff = util::run_spin(
+        "git",
+        &["diff", &format!("{base}..HEAD")],
+        Some(&worktree_abs),
+        "Getting diff…",
+    )?;
     if diff.is_empty() {
         anyhow::bail!("no changes to create a PR for task {id}");
     }
@@ -83,11 +94,12 @@ Output ONLY a valid JSON object with these fields (no markdown fences, no extra 
 - "branch": short kebab-case branch name (under 40 chars, no "cond/" prefix)"#
     );
 
-    let (pr_title, pr_body, new_branch_slug) = match util::run_with_stdin(
+    let (pr_title, pr_body, new_branch_slug) = match util::run_with_stdin_spin(
         "claude",
         &["-p"],
         &claude_prompt,
         Some(&worktree_abs),
+        "Claude is generating PR title and description…",
     ) {
         Ok(output) => parse_claude_pr_output(&output, &description, id),
         Err(e) => {
@@ -131,10 +143,11 @@ Output ONLY a valid JSON object with these fields (no markdown fences, no extra 
     };
 
     // Push the branch
-    util::run(
+    util::run_spin(
         "git",
         &["push", "-u", "origin", &final_branch],
         Some(&worktree_abs),
+        "Pushing branch…",
     )?;
 
     // Create PR
@@ -146,7 +159,7 @@ Output ONLY a valid JSON object with these fields (no markdown fences, no extra 
         args.push("--draft");
     }
 
-    let output = util::run("gh", &args, Some(&worktree_abs))?;
+    let output = util::run_spin("gh", &args, Some(&worktree_abs), "Creating pull request…")?;
     let pr_url = output.trim().to_string();
     let pr_number = pr_url
         .rsplit('/')
@@ -389,7 +402,7 @@ pub fn merge(
     }
     args.push("--delete-branch");
 
-    util::run("gh", &args, Some(repo_root))?;
+    util::run_spin("gh", &args, Some(repo_root), "Merging pull request…")?;
 
     // Only remove worktree + local branch after merge succeeds
     if worktree_path.exists() {

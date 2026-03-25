@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use indicatif::{ProgressBar, ProgressStyle};
 use std::path::Path;
 use std::process::Command;
 
@@ -103,6 +104,42 @@ pub fn run_with_stdin(cmd: &str, args: &[&str], stdin_data: &str, cwd: Option<&P
         anyhow::bail!("{} {} failed: {}", cmd, args.join(" "), stderr.trim());
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+/// Create a styled spinner with a message.
+pub fn spinner(message: &str) -> ProgressBar {
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(
+        ProgressStyle::default_spinner()
+            .tick_strings(&["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"])
+            .template("{spinner:.cyan} {msg}")
+            .unwrap(),
+    );
+    pb.set_message(message.to_string());
+    pb.enable_steady_tick(std::time::Duration::from_millis(80));
+    pb
+}
+
+/// Run a command with a spinner, capture stdout. Errors on non-zero exit.
+pub fn run_spin(cmd: &str, args: &[&str], cwd: Option<&Path>, message: &str) -> Result<String> {
+    let pb = spinner(message);
+    let result = run(cmd, args, cwd);
+    pb.finish_and_clear();
+    result
+}
+
+/// Run a command with stdin piped and a spinner. Errors on non-zero exit.
+pub fn run_with_stdin_spin(
+    cmd: &str,
+    args: &[&str],
+    stdin_data: &str,
+    cwd: Option<&Path>,
+    message: &str,
+) -> Result<String> {
+    let pb = spinner(message);
+    let result = run_with_stdin(cmd, args, stdin_data, cwd);
+    pb.finish_and_clear();
+    result
 }
 
 /// Detect if CWD is inside a task worktree, return task ID if so.
