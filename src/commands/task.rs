@@ -146,11 +146,27 @@ pub fn diff(repo_root: &Path, state: &CondState, query: &str) -> Result<()> {
     let task = state.find_task(query)?;
     let worktree_abs = repo_root.join(&task.worktree_path);
     let base = util::default_branch(repo_root)?;
+    let range = format!("{base}..HEAD");
+
+    // Commit count
+    let commit_count = util::run("git", &["rev-list", "--count", &range], Some(&worktree_abs))
+        .unwrap_or_else(|_| "?".to_string());
+
+    // Header
+    eprintln!("\x1b[1;36m{}\x1b[0m", task.description);
+    eprintln!(
+        "\x1b[2m{}  •  {} commit(s) ahead of {base}\x1b[0m",
+        task.branch, commit_count
+    );
+    eprintln!();
+
+    // File-level stat summary, then full coloured diff
     util::run_inherit(
         "git",
-        &["diff", &format!("{base}..HEAD")],
+        &["diff", "--color=always", "--stat", "-p", &range],
         Some(&worktree_abs),
     )?;
+
     Ok(())
 }
 
