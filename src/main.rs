@@ -96,7 +96,7 @@ enum Commands {
         task: String,
     },
 
-    /// Print the repo base (root) path
+    /// Change directory to the repo root
     Base,
 
     /// Print shell integration for eval (add `eval "$(cond shell-setup)"` to your shell rc)

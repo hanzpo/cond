@@ -5,21 +5,35 @@ use std::path::Path;
 use crate::state::{CondState, TaskStatus};
 use crate::util;
 
+fn require_claude() -> Result<()> {
+    if !util::check_on_path("claude") {
+        anyhow::bail!(
+            "claude CLI not found on PATH.\n\
+             Install it from https://docs.anthropic.com/en/docs/claude-code and run `claude` once to authenticate."
+        );
+    }
+    Ok(())
+}
+
 pub fn review(repo_root: &Path, state: &CondState, query: &str) -> Result<()> {
+    require_claude()?;
+
     let task = state.find_task(query)?;
     let worktree_abs = repo_root.join(&task.worktree_path);
     let description = &task.description;
     let branch = &task.branch;
     let base = util::default_branch(repo_root)?;
 
+    let id = task.id;
+    eprintln!("\x1b[1;36mReviewing task {id}:\x1b[0m {description}");
+
     let diff = util::run_spin(
         "git",
         &["diff", &format!("{base}..{branch}")],
         Some(&worktree_abs),
-        "Getting diff…",
+        "Collecting diff…",
     )?;
 
-    let id = task.id;
     if diff.is_empty() {
         println!("no changes to review for task {id}");
         return Ok(());
@@ -35,7 +49,7 @@ pub fn review(repo_root: &Path, state: &CondState, query: &str) -> Result<()> {
 Review for correctness, bugs, style, and security. If changes are needed, make them directly. If the code is good, say so."#
     );
 
-    eprintln!("Starting review with Claude…");
+    eprintln!("Opening Claude for interactive review…");
     // Pass prompt as positional argument for interactive mode
     util::run_inherit("claude", &[&prompt], Some(&worktree_abs))?;
 
@@ -52,16 +66,24 @@ pub fn pr(
     let task = state.find_task(query)?;
     let id = task.id;
 
-    // Don't create duplicate PRs
-    if task.pr_number.is_some() {
+    // If a PR already exists, ask whether to regenerate title/description
+    if let Some(pr_num) = task.pr_number {
         let url = task.pr_url.as_deref().unwrap_or("unknown");
-        anyhow::bail!("task {id} already has PR {url}");
+        eprintln!("task {id} already has PR #{pr_num}: {url}");
+        if !util::confirm("regenerate title and description?") {
+            anyhow::bail!("aborted");
+        }
+        return regenerate_pr(repo_root, state, query, title, pr_num);
     }
 
     // Don't create PRs for tasks that are already done
     if task.status == TaskStatus::Merged || task.status == TaskStatus::Cleaned {
         anyhow::bail!("task {id} is already {}", task.status);
     }
+
+    require_claude()?;
+
+    eprintln!("\x1b[1;36mCreating PR for task {id}\x1b[0m");
 
     let worktree_abs = repo_root.join(&task.worktree_path);
     let branch = task.branch.clone();
@@ -73,7 +95,7 @@ pub fn pr(
         "git",
         &["diff", &format!("{base}..HEAD")],
         Some(&worktree_abs),
-        "Getting diff…",
+        "Collecting diff…",
     )?;
     if diff.is_empty() {
         anyhow::bail!("no changes to create a PR for task {id}");
@@ -185,6 +207,96 @@ Output ONLY a valid JSON object with these fields (no markdown fences, no extra 
     } else {
         println!("PR created for task {id}: {pr_url}");
     }
+
+    Ok(())
+}
+
+/// Regenerate the title and description of an existing PR using Claude.
+fn regenerate_pr(
+    repo_root: &Path,
+    state: &mut CondState,
+    query: &str,
+    title_override: Option<&str>,
+    pr_number: u32,
+) -> Result<()> {
+    require_claude()?;
+
+    let task = state.find_task(query)?;
+    let id = task.id;
+    let worktree_abs = repo_root.join(&task.worktree_path);
+    let description = task.description.clone();
+    let branch = task.branch.clone();
+    let base = util::default_branch(repo_root)?;
+
+    // Push any new commits first
+    util::run_spin(
+        "git",
+        &["push", "-u", "origin", &branch],
+        Some(&worktree_abs),
+        "Pushing latest changes…",
+    )?;
+
+    let diff = util::run_spin(
+        "git",
+        &["diff", &format!("{base}..HEAD")],
+        Some(&worktree_abs),
+        "Collecting diff…",
+    )?;
+    if diff.is_empty() {
+        anyhow::bail!("no changes found for task {id}");
+    }
+
+    let claude_prompt = format!(
+        r#"Generate a PR title, description, and branch name for these changes.
+The original task description was: "{description}"
+
+<diff>
+{diff}
+</diff>
+
+Output ONLY a valid JSON object with these fields (no markdown fences, no extra text):
+- "title": concise PR title (under 70 chars)
+- "description": markdown PR description (2-5 sentences summarizing the changes)
+- "branch": short kebab-case branch name (under 40 chars, no "cond/" prefix)"#
+    );
+
+    let (pr_title, pr_body, _) = match util::run_with_stdin_spin(
+        "claude",
+        &["-p"],
+        &claude_prompt,
+        Some(&worktree_abs),
+        "Claude is generating new PR title and description…",
+    ) {
+        Ok(output) => parse_claude_pr_output(&output, &description, id),
+        Err(e) => {
+            eprintln!("warning: claude failed ({e}), using defaults");
+            (
+                description.clone(),
+                format!("Task #{id}: {description}\n\nCreated by cond."),
+                None::<String>,
+            )
+        }
+    };
+
+    let pr_title = title_override
+        .map(|t| t.to_string())
+        .unwrap_or(pr_title);
+
+    let pr_num_str = pr_number.to_string();
+    util::run_spin(
+        "gh",
+        &[
+            "pr", "edit", &pr_num_str, "--title", &pr_title, "--body", &pr_body,
+        ],
+        Some(&worktree_abs),
+        "Updating pull request…",
+    )?;
+
+    let task = state.find_task_mut(query)?;
+    task.updated_at = Utc::now();
+
+    let url = task.pr_url.as_deref().unwrap_or("unknown");
+    println!("PR #{pr_number} updated for task {id}: {url}");
 
     Ok(())
 }
@@ -406,10 +518,13 @@ pub fn merge(
     }
     args.push("--delete-branch");
 
-    util::run_spin("gh", &args, Some(repo_root), "Merging pull request…")?;
+    eprintln!("\x1b[1;36mMerging task {id}\x1b[0m (PR #{pr_number})");
+
+    util::run_spin("gh", &args, Some(repo_root), "Merging PR on GitHub…")?;
 
     // Only remove worktree + local branch after merge succeeds
     if worktree_path.exists() {
+        eprintln!("Cleaning up worktree and branch…");
         let _ = util::run(
             "git",
             &[
@@ -428,7 +543,7 @@ pub fn merge(
     task.status = TaskStatus::Merged;
     task.updated_at = Utc::now();
 
-    eprintln!("merged task {id} (PR #{pr_number})");
+    eprintln!("\x1b[1;32mDone!\x1b[0m Task {id} merged and cleaned up.");
     // Print repo root to stdout so the shell wrapper can cd there
     println!("{}", repo_root.display());
 

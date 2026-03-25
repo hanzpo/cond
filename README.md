@@ -36,7 +36,7 @@ eval "$(cond shell-setup)"   # enable shell integration (add to .zshrc/.bashrc)
 | `cond new <description>` | Alias for `spawn` |
 | `cond status` / `cond ls` | Show all tasks and their statuses |
 | `cond cd [task]` | Change directory to a task's worktree, or repo root if omitted |
-| `cond base` | Print the repo base path |
+| `cond base` | Change directory to the repo root |
 | `cond diff [task]` | Show the diff between a task's branch and main |
 | `cond review [task]` | Open Claude Code in the task's worktree for AI-assisted review |
 | `cond pr [task]` | Push the branch and create a GitHub PR |
