@@ -68,7 +68,6 @@ pub fn kill(repo_root: &Path, state: &mut CondState, query: &str) -> Result<()> 
     let task = state.find_task(query)?;
     let branch = task.branch.clone();
     let worktree_path = repo_root.join(&task.worktree_path);
-    let is_merged = task.status == TaskStatus::Merged;
 
     if worktree_path.exists() {
         let _ = util::run(
@@ -78,9 +77,8 @@ pub fn kill(repo_root: &Path, state: &mut CondState, query: &str) -> Result<()> 
         );
     }
 
-    if !is_merged {
-        let _ = util::run("git", &["branch", "-D", &branch], Some(repo_root));
-    }
+    // Always attempt to delete local branch (ignore errors if already gone)
+    let _ = util::run("git", &["branch", "-D", &branch], Some(repo_root));
 
     let task = state.find_task_mut(query)?;
     let id = task.id;

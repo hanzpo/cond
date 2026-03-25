@@ -31,14 +31,14 @@ enum Commands {
 
     /// Open claude in a task's worktree to review changes
     Review {
-        /// Task ID or name
-        task: String,
+        /// Task ID or name (auto-detected if inside a worktree)
+        task: Option<String>,
     },
 
     /// Create a GitHub PR for a task
     Pr {
-        /// Task ID or name
-        task: String,
+        /// Task ID or name (auto-detected if inside a worktree)
+        task: Option<String>,
         /// PR title (defaults to task description)
         #[arg(long)]
         title: Option<String>,
@@ -49,20 +49,17 @@ enum Commands {
 
     /// Merge the PR for a task
     Merge {
-        /// Task ID or name
-        task: String,
+        /// Task ID or name (auto-detected if inside a worktree)
+        task: Option<String>,
         /// Squash merge
         #[arg(long, default_value_t = true)]
         squash: bool,
-        /// Delete branch after merge
-        #[arg(long, default_value_t = true)]
-        delete_branch: bool,
     },
 
     /// Print the worktree path for a task, or "root" for repo root
     Cd {
         /// Task ID, name, or "root"
-        task: String,
+        task: Option<String>,
     },
 
     /// Remove cleaned tasks from state
@@ -70,8 +67,8 @@ enum Commands {
 
     /// Show the diff for a task's branch against main
     Diff {
-        /// Task ID or name
-        task: String,
+        /// Task ID or name (auto-detected if inside a worktree)
+        task: Option<String>,
     },
 
     /// Remove a task's worktree and branch
@@ -100,8 +97,45 @@ enum Commands {
     },
 }
 
+/// Resolve task query: use provided value or auto-detect from current worktree.
+fn resolve_task_query(
+    state: &state::CondState,
+    repo_root: &std::path::PathBuf,
+    task: Option<&str>,
+) -> Result<String> {
+    if let Some(t) = task {
+        Ok(t.to_string())
+    } else {
+        util::detect_task_from_cwd(state, repo_root)
+            .map(|id| id.to_string())
+            .ok_or_else(|| {
+                anyhow::anyhow!("not inside a task worktree — provide a task ID or name")
+            })
+    }
+}
+
+/// Ensure shell integration is active (COND_SHELL env var set).
+fn ensure_shell_setup() -> Result<()> {
+    if !commands::shell::is_shell_setup() {
+        let rc = commands::shell::rc_path()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| "~/.zshrc".to_string());
+        anyhow::bail!(
+            "shell integration not active. Run:\n\n  source {}\n\nIf not yet added, run `cond init` first.",
+            rc
+        );
+    }
+    Ok(())
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
+
+    // Enforce shell setup for all commands except init, shell-setup, and base
+    match &cli.command {
+        Commands::Init | Commands::ShellSetup | Commands::Base => {}
+        _ => ensure_shell_setup()?,
+    }
 
     match cli.command {
         Commands::Init => {
@@ -121,18 +155,21 @@ fn main() -> Result<()> {
         Commands::Review { task } => {
             let repo_root = util::repo_root()?;
             let state = state::CondState::load(&repo_root)?;
-            commands::review::review(&repo_root, &state, &task)?;
+            let query = resolve_task_query(&state, &repo_root, task.as_deref())?;
+            commands::review::review(&repo_root, &state, &query)?;
         }
         Commands::Pr { task, title, draft } => {
             let repo_root = util::repo_root()?;
             let mut state = state::CondState::load(&repo_root)?;
-            commands::review::pr(&repo_root, &mut state, &task, title.as_deref(), draft)?;
+            let query = resolve_task_query(&state, &repo_root, task.as_deref())?;
+            commands::review::pr(&repo_root, &mut state, &query, title.as_deref(), draft)?;
             state.save(&repo_root)?;
         }
-        Commands::Merge { task, squash, delete_branch } => {
+        Commands::Merge { task, squash } => {
             let repo_root = util::repo_root()?;
             let mut state = state::CondState::load(&repo_root)?;
-            commands::review::merge(&repo_root, &mut state, &task, squash, delete_branch)?;
+            let query = resolve_task_query(&state, &repo_root, task.as_deref())?;
+            commands::review::merge(&repo_root, &mut state, &query, squash)?;
             state.save(&repo_root)?;
         }
         Commands::Base => {
@@ -149,22 +186,21 @@ fn main() -> Result<()> {
             commands::shell::shell_setup()?;
         }
         Commands::Cd { task } => {
-            if !commands::shell::is_shell_setup() {
-                eprintln!("warning: shell integration not set up — `cond cd` will only print the path.");
-                eprintln!("add this to your shell rc file:");
-                eprintln!();
-                eprintln!("  eval \"$(cond shell-setup)\"");
-                eprintln!();
-            }
             let repo_root = util::repo_root()?;
-            let state = state::CondState::load(&repo_root)?;
-            let found = state.find_task(&task)?;
-            print!("{}", repo_root.join(&found.worktree_path).display());
+            if let Some(task) = task {
+                let state = state::CondState::load(&repo_root)?;
+                let found = state.find_task(&task)?;
+                print!("{}", repo_root.join(&found.worktree_path).display());
+            } else {
+                // No task specified = go to repo root
+                print!("{}", repo_root.display());
+            }
         }
         Commands::Diff { task } => {
             let repo_root = util::repo_root()?;
             let state = state::CondState::load(&repo_root)?;
-            commands::task::diff(&repo_root, &state, &task)?;
+            let query = resolve_task_query(&state, &repo_root, task.as_deref())?;
+            commands::task::diff(&repo_root, &state, &query)?;
         }
         Commands::Kill { task } | Commands::Rm { task } => {
             let repo_root = util::repo_root()?;

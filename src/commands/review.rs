@@ -29,7 +29,8 @@ pub fn review(repo_root: &Path, state: &CondState, query: &str) -> Result<()> {
 Review for correctness, bugs, style, and security. If changes are needed, make them directly. If the code is good, say so."#
     );
 
-    util::run_inherit("claude", &["--prompt", &prompt], Some(&worktree_abs))?;
+    // Pass prompt as positional argument for interactive mode
+    util::run_inherit("claude", &[&prompt], Some(&worktree_abs))?;
 
     Ok(())
 }
@@ -42,20 +43,84 @@ pub fn pr(
     draft: bool,
 ) -> Result<()> {
     let task = state.find_task(query)?;
+    let id = task.id;
     let worktree_abs = repo_root.join(&task.worktree_path);
-    let branch = &task.branch;
-    let description = &task.description;
-    let pr_title = title.unwrap_or(description);
+    let branch = task.branch.clone();
+    let description = task.description.clone();
+
+    // Get diff for claude to analyze
+    let diff = util::run("git", &["diff", "main..HEAD"], Some(&worktree_abs))?;
+    if diff.is_empty() {
+        anyhow::bail!("no changes to create a PR for task {id}");
+    }
+
+    // Use claude to generate PR content
+    let claude_prompt = format!(
+        r#"Generate a PR title, description, and branch name for these changes.
+The original task description was: "{description}"
+
+<diff>
+{diff}
+</diff>
+
+Output ONLY a valid JSON object with these fields (no markdown fences, no extra text):
+- "title": concise PR title (under 70 chars)
+- "description": markdown PR description (2-5 sentences summarizing the changes)
+- "branch": short kebab-case branch name (under 40 chars, no "cond/" prefix)"#
+    );
+
+    let (pr_title, pr_body, new_branch_slug) = match util::run_with_stdin(
+        "claude",
+        &["-p"],
+        &claude_prompt,
+        Some(&worktree_abs),
+    ) {
+        Ok(output) => parse_claude_pr_output(&output, &description, id),
+        Err(e) => {
+            eprintln!("warning: claude failed ({e}), using defaults");
+            (
+                description.clone(),
+                format!("Task #{id}: {description}\n\nCreated by cond."),
+                None::<String>,
+            )
+        }
+    };
+
+    // Use user-provided title if specified, otherwise use claude's
+    let pr_title = title.map(|t| t.to_string()).unwrap_or(pr_title);
+
+    // Rename branch if claude suggested a better name
+    let final_branch = if let Some(slug) = new_branch_slug {
+        let new_branch = format!("cond/task-{id}-{slug}");
+        if new_branch != branch {
+            util::run(
+                "git",
+                &["branch", "-m", &branch, &new_branch],
+                Some(&worktree_abs),
+            )?;
+            // Update state with new branch name
+            let task = state.find_task_mut(query)?;
+            task.branch = new_branch.clone();
+            task.updated_at = Utc::now();
+            new_branch
+        } else {
+            branch
+        }
+    } else {
+        branch
+    };
 
     // Push the branch
-    util::run("git", &["push", "-u", "origin", branch], Some(&worktree_abs))?;
+    util::run(
+        "git",
+        &["push", "-u", "origin", &final_branch],
+        Some(&worktree_abs),
+    )?;
 
     // Create PR
-    let id = task.id;
-    let body = format!("Task #{id}: {description}\n\nCreated by cond.");
     let mut args = vec![
-        "pr", "create", "--base", "main", "--head", branch,
-        "--title", pr_title, "--body", &body,
+        "pr", "create", "--base", "main", "--head", &final_branch, "--title", &pr_title, "--body",
+        &pr_body,
     ];
     if draft {
         args.push("--draft");
@@ -63,7 +128,10 @@ pub fn pr(
 
     let output = util::run("gh", &args, Some(&worktree_abs))?;
     let pr_url = output.trim().to_string();
-    let pr_number = pr_url.rsplit('/').next().and_then(|s| s.parse::<u32>().ok());
+    let pr_number = pr_url
+        .rsplit('/')
+        .next()
+        .and_then(|s| s.parse::<u32>().ok());
 
     let task = state.find_task_mut(query)?;
     task.pr_url = Some(pr_url.clone());
@@ -80,30 +148,111 @@ pub fn pr(
     Ok(())
 }
 
+/// Parse claude's JSON output for PR content. Returns (title, body, optional branch slug).
+fn parse_claude_pr_output(
+    output: &str,
+    fallback_description: &str,
+    task_id: u32,
+) -> (String, String, Option<String>) {
+    // Try to extract JSON from the output (claude may wrap in ```json blocks)
+    let json_str = extract_json(output);
+
+    if let Some(json_str) = json_str {
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_str) {
+            let title = val["title"]
+                .as_str()
+                .unwrap_or(fallback_description)
+                .to_string();
+            let description = val["description"]
+                .as_str()
+                .unwrap_or(&format!(
+                    "Task #{task_id}: {fallback_description}\n\nCreated by cond."
+                ))
+                .to_string();
+            let branch = val["branch"].as_str().map(|s| {
+                // Sanitize: ensure it's a valid branch slug
+                crate::util::slugify(s)
+            });
+            return (title, description, branch);
+        }
+    }
+
+    // Fallback
+    (
+        fallback_description.to_string(),
+        format!("Task #{task_id}: {fallback_description}\n\nCreated by cond."),
+        None,
+    )
+}
+
+/// Extract JSON object from text that may contain markdown fences or other content.
+fn extract_json(text: &str) -> Option<&str> {
+    // Try ```json blocks
+    if let Some(start) = text.find("```json") {
+        let start = start + 7;
+        if let Some(end) = text[start..].find("```") {
+            return Some(text[start..start + end].trim());
+        }
+    }
+    // Try ``` blocks
+    if let Some(start) = text.find("```\n") {
+        let start = start + 4;
+        if let Some(end) = text[start..].find("```") {
+            return Some(text[start..start + end].trim());
+        }
+    }
+    // Try raw JSON object
+    if let Some(start) = text.find('{') {
+        if let Some(end) = text.rfind('}') {
+            return Some(&text[start..=end]);
+        }
+    }
+    None
+}
+
 pub fn merge(
     repo_root: &Path,
     state: &mut CondState,
     query: &str,
     squash: bool,
-    delete_branch: bool,
 ) -> Result<()> {
     let task = state.find_task(query)?;
     let id = task.id;
+    let branch = task.branch.clone();
+    let worktree_path = repo_root.join(&task.worktree_path);
     let pr_number = task
         .pr_number
         .ok_or_else(|| anyhow::anyhow!("task {id} has no PR — run `cond pr {id}` first"))?;
 
     let pr_num_str = pr_number.to_string();
+
+    // Remove worktree FIRST so branch can be deleted
+    if worktree_path.exists() {
+        let _ = util::run(
+            "git",
+            &[
+                "worktree",
+                "remove",
+                &worktree_path.to_string_lossy(),
+                "--force",
+            ],
+            Some(repo_root),
+        );
+    }
+
+    // Merge the PR (with --delete-branch now that worktree is gone)
     let mut args = vec!["pr", "merge", &pr_num_str];
     if squash {
         args.push("--squash");
     }
-    if delete_branch {
-        args.push("--delete-branch");
-    }
+    args.push("--delete-branch");
 
     util::run("gh", &args, Some(repo_root))?;
 
+    // Clean up local branch if it still exists
+    let _ = util::run("git", &["branch", "-D", &branch], Some(repo_root));
+
+    // Update state
     let task = state.find_task_mut(query)?;
     task.status = TaskStatus::Merged;
     task.updated_at = Utc::now();

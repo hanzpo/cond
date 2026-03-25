@@ -59,6 +59,45 @@ pub fn repo_root() -> Result<std::path::PathBuf> {
     Ok(std::fs::canonicalize(root)?)
 }
 
+/// Run a command with stdin piped, capture stdout. Errors on non-zero exit.
+pub fn run_with_stdin(cmd: &str, args: &[&str], stdin_data: &str, cwd: Option<&Path>) -> Result<String> {
+    use std::io::Write;
+    let mut command = Command::new(cmd);
+    command.args(args);
+    if let Some(dir) = cwd {
+        command.current_dir(dir);
+    }
+    command.stdin(std::process::Stdio::piped());
+    command.stdout(std::process::Stdio::piped());
+    command.stderr(std::process::Stdio::piped());
+
+    let mut child = command.spawn().with_context(|| format!("failed to run {cmd}"))?;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(stdin_data.as_bytes())?;
+    }
+    let output = child.wait_with_output()?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        anyhow::bail!("{} {} failed: {}", cmd, args.join(" "), stderr.trim());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+/// Detect if CWD is inside a task worktree, return task ID if so.
+pub fn detect_task_from_cwd(state: &crate::state::CondState, repo_root: &Path) -> Option<u32> {
+    let cwd = std::env::current_dir().ok()?;
+    let cwd = std::fs::canonicalize(&cwd).ok()?;
+    for task in &state.tasks {
+        let worktree_abs = repo_root.join(&task.worktree_path);
+        if let Ok(worktree_canon) = std::fs::canonicalize(&worktree_abs) {
+            if cwd.starts_with(&worktree_canon) {
+                return Some(task.id);
+            }
+        }
+    }
+    None
+}
+
 /// Slugify a description for use in branch names.
 pub fn slugify(text: &str) -> String {
     let slug: String = text

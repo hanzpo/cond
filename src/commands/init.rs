@@ -1,5 +1,5 @@
 use anyhow::{bail, Result};
-use std::io::{self, Write};
+use std::io::Write;
 use std::path::Path;
 
 use crate::commands::shell;
@@ -41,27 +41,34 @@ pub fn init() -> Result<()> {
 
     println!("initialized cond in {}", repo_root.display());
 
-    if !shell::is_shell_setup() && !shell::is_rc_configured() {
+    // Always set up shell integration — it's required for cond to work properly
+    setup_shell_integration()?;
+
+    Ok(())
+}
+
+fn setup_shell_integration() -> Result<()> {
+    let rc_path = shell::rc_path()?;
+    let line = "\neval \"$(cond shell-setup)\"\n";
+
+    if shell::is_rc_configured() {
+        eprintln!("shell integration already in {}", rc_path.display());
+    } else {
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(&rc_path)?;
+        file.write_all(line.as_bytes())?;
+        eprintln!(
+            "added shell integration to {}",
+            rc_path.display()
+        );
+    }
+
+    if !shell::is_shell_setup() {
         eprintln!();
-        eprint!("set up shell integration so `cond cd` works natively? [y/N] ");
-        io::stderr().flush()?;
-
-        let mut answer = String::new();
-        io::stdin().read_line(&mut answer)?;
-
-        if answer.trim().eq_ignore_ascii_case("y") {
-            let rc_path = shell::rc_path()?;
-            let line = "\neval \"$(cond shell-setup)\"\n";
-            let mut file = std::fs::OpenOptions::new()
-                .append(true)
-                .create(true)
-                .open(&rc_path)?;
-            file.write_all(line.as_bytes())?;
-            eprintln!("added to {} — restart your shell or run: source {}", rc_path.display(), rc_path.display());
-        } else {
-            eprintln!("skipped. you can set it up later with:");
-            eprintln!("  eval \"$(cond shell-setup)\"");
-        }
+        eprintln!("run this to activate now:");
+        eprintln!("  source {}", rc_path.display());
     }
 
     Ok(())
