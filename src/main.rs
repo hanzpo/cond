@@ -23,6 +23,12 @@ enum Commands {
         description: String,
     },
 
+    /// Create a new task (alias for spawn)
+    New {
+        /// Task description
+        description: String,
+    },
+
     /// Show status of all tasks
     Status,
 
@@ -141,7 +147,7 @@ fn main() -> Result<()> {
         Commands::Init => {
             commands::init::init()?;
         }
-        Commands::Spawn { description } => {
+        Commands::Spawn { description } | Commands::New { description } => {
             let repo_root = util::repo_root()?;
             let mut state = state::CondState::load(&repo_root)?;
             commands::task::spawn(&repo_root, &mut state, &description)?;
