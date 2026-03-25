@@ -10,6 +10,7 @@ A Git worktree agent orchestrator for parallel development workflows.
 - **Git**
 - **gh** (GitHub CLI) -- for PR creation and merging
 - **claude** (Claude Code CLI) -- for AI-assisted review
+- **tmux** (strongly recommended) -- cond is designed around parallel workflows, and tmux lets you monitor multiple tasks in separate panes/windows simultaneously. Without it, you'll be switching between worktrees one at a time.
 
 ## Installation
 
