@@ -21,6 +21,13 @@ pub fn is_shell_setup() -> bool {
     std::env::var("COND_SHELL").is_ok()
 }
 
+/// Check if the rc file already contains the shell-setup eval line.
+pub fn is_rc_configured() -> bool {
+    let Ok(rc) = rc_path() else { return false };
+    let Ok(contents) = std::fs::read_to_string(rc) else { return false };
+    contents.contains("cond shell-setup")
+}
+
 pub fn rc_path() -> Result<PathBuf> {
     let home = std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE"))?;
     let shell = std::env::var("SHELL").unwrap_or_default();
