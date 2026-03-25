@@ -41,7 +41,7 @@ pub fn init() -> Result<()> {
 
     println!("initialized cond in {}", repo_root.display());
 
-    if !shell::is_shell_setup() {
+    if !shell::is_shell_setup() && !shell::is_rc_configured() {
         eprintln!();
         eprint!("set up shell integration so `cond cd` works natively? [y/N] ");
         io::stderr().flush()?;
@@ -52,19 +52,12 @@ pub fn init() -> Result<()> {
         if answer.trim().eq_ignore_ascii_case("y") {
             let rc_path = shell::rc_path()?;
             let line = "\neval \"$(cond shell-setup)\"\n";
-
-            // check if already present
-            let contents = std::fs::read_to_string(&rc_path).unwrap_or_default();
-            if contents.contains("cond shell-setup") {
-                eprintln!("already in {}", rc_path.display());
-            } else {
-                let mut file = std::fs::OpenOptions::new()
-                    .append(true)
-                    .create(true)
-                    .open(&rc_path)?;
-                file.write_all(line.as_bytes())?;
-                eprintln!("added to {} — restart your shell or run: source {}", rc_path.display(), rc_path.display());
-            }
+            let mut file = std::fs::OpenOptions::new()
+                .append(true)
+                .create(true)
+                .open(&rc_path)?;
+            file.write_all(line.as_bytes())?;
+            eprintln!("added to {} — restart your shell or run: source {}", rc_path.display(), rc_path.display());
         } else {
             eprintln!("skipped. you can set it up later with:");
             eprintln!("  eval \"$(cond shell-setup)\"");
